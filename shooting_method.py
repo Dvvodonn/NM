@@ -6,16 +6,17 @@ How to use:
    your second-order ODE y'' = g(x, y, y'), boundary values, interval, and
    preferred methods (RK4 / euler / backward_euler with Newton per step;
    root-finders: newton / secant / bisection).
-2. Run `python shooting_method.py`. Figures are written next to the script:
-   - trajectories.png : solutions computed per shooting iteration
-   - residuals.png    : |y(b) - beta| per iteration
-   - timing.png       : wall time per iteration (root-finder step)
+2. Run `python shooting_method.py`. Figures are written to the plots/ folder:
+   - plots/trajectories.png : solutions computed per shooting iteration
+   - plots/residuals.png    : |y(b) - beta| per iteration
+   - plots/timing.png       : wall time per iteration (root-finder step)
 
 This file is intentionally verbose and opinionated so each moving part is clear.
 """
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional, Tuple
@@ -138,14 +139,15 @@ def to_first_order(ode: Callable[[float, float, float], float]) -> Callable[[flo
 def numerical_jacobian(
     f: Callable[[float, Vector], Vector], x: float, z: Vector, eps: float = 1e-6
 ) -> np.ndarray:
-    """Finite-difference Jacobian of f wrt z."""
+    """Finite-difference Jacobian of f wrt z using central differences."""
     n = len(z)
-    f0 = f(x, z)
     J = np.zeros((n, n), dtype=float)
     for i in range(n):
-        z_perturbed = z.copy()
-        z_perturbed[i] += eps
-        J[:, i] = (f(x, z_perturbed) - f0) / eps
+        z_plus = z.copy()
+        z_plus[i] += eps
+        z_minus = z.copy()
+        z_minus[i] -= eps
+        J[:, i] = (f(x, z_plus) - f(x, z_minus)) / (2 * eps)
     return J
 
 
@@ -482,10 +484,13 @@ def main() -> None:
     if result.records:
         print(f"Final residual |y(b)-beta|: {abs(result.records[-1].residual):.3e}")
 
-    plot_trajectories(result.records, filename="trajectories.png")
-    plot_residuals(result.records, filename="residuals.png")
-    plot_timing(result.records, filename="timing.png")
-    print("Saved plots: trajectories.png, residuals.png, timing.png")
+    # Create plots directory if it doesn't exist
+    os.makedirs("plots", exist_ok=True)
+
+    plot_trajectories(result.records, filename="plots/trajectories.png")
+    plot_residuals(result.records, filename="plots/residuals.png")
+    plot_timing(result.records, filename="plots/timing.png")
+    print("Saved plots: plots/trajectories.png, plots/residuals.png, plots/timing.png")
 
 
 if __name__ == "__main__":
