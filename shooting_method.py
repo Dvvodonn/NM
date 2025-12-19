@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 import matplotlib
 import numpy as np
@@ -468,6 +468,72 @@ def plot_timing(records: Iterable[IterationRecord], filename: str) -> None:
     plt.tight_layout()
     plt.savefig(filename, dpi=150)
     plt.close()
+
+
+# ---------------------------------------------------------------------------
+# Convenience wrapper (signature expected by benchmarks/tests)
+# ---------------------------------------------------------------------------
+def shooting_solve(
+    ode_fun: Callable[[float, float, float], float],
+    a: float,
+    b: float,
+    alpha: float,
+    beta: float,
+    s0: float,
+    **kwargs: Any,
+):
+    """
+    Thin wrapper that adapts the existing ShootingConfig/shoot pipeline to a
+    simpler signature. Returns (x, y, meta).
+    """
+    ivp_method = kwargs.pop("ivp_method", "rk4")
+    root_method = kwargs.pop("root_method", "newton")
+    slope_bracket = kwargs.pop("slope_bracket", kwargs.pop("bracket", None))
+    tol = kwargs.pop("tol", kwargs.pop("residual_tol", 1e-6))
+    max_iter = kwargs.pop("max_iter", kwargs.pop("max_root_iterations", 25))
+    fd_step = kwargs.pop("fd_step", 1e-6)
+    grid_points = kwargs.pop("grid_points", kwargs.pop("steps", 200))
+
+    # Provide a default bracket for bracketed methods if none was supplied.
+    if slope_bracket is None and root_method.lower() in {"secant", "bisection"}:
+        slope_bracket = (s0 - 1.0, s0 + 1.0)
+
+    config = ShootingConfig(
+        ode=ode_fun,
+        interval=(a, b),
+        boundary_values=(alpha, beta),
+        initial_slope=s0,
+        slope_bracket=slope_bracket,
+        ivp_method=ivp_method,
+        root_method=root_method,
+        grid_points=grid_points,
+        residual_tol=tol,
+        max_root_iterations=max_iter,
+        fd_step=fd_step,
+    )
+
+    result = shoot(config)
+    system = to_first_order(config.ode)
+    x, y, _ = integrate_ivp(
+        system=system,
+        interval=config.interval,
+        y0=config.boundary_values[0],
+        v0=result.slope_star,
+        steps=config.grid_points,
+        method=config.ivp_method,
+    )
+
+    meta = {
+        "converged": result.converged,
+        "iters": len(result.records),
+        "slope_star": result.slope_star,
+        "slope_history": [r.slope for r in result.records],
+        "residual_history": [r.residual for r in result.records],
+        "root_method": config.root_method,
+        "ivp_method": config.ivp_method,
+        "records": result.records,
+    }
+    return x, y, meta
 
 
 # ---------------------------------------------------------------------------
